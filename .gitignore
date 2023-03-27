@@ -1,0 +1,7 @@
+# /datasets/*[!.py]
+/datasets
+.ipynb_checkpoints
+__pycache__
+training/*  
+scripts/_nohup
+/.vscode/sftp.json

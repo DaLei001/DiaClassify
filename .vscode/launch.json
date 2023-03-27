@@ -1,0 +1,51 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args":[
+                // exp01
+                // "Dia454","Classify","--loader","Diabetes_Classification","--batch-size","8","--repr-dims","320","--eval",""
+                
+                // exp02
+                // "Dia437","Classify","--loader","Diabetes_Classification_v2","--batch-size","8","--gpu","0","--repr-dims","320","--eval" 
+                // exp02-220
+                "Dia220","Classify","--loader","Diabetes_Classification_v2","--batch-size","8","--gpu","0","--repr-dims","320","--eval" 
+                
+                // exp03-182_normProb_0.7
+                // "Dia182_normProb_0.7","Classify","--loader","Diabetes_Classification_v3","--batch-size","8","--gpu","0","--repr-dims","320","--eval" 
+                // exp03-175_normProb_0.7
+                // "Dia175_normProb_0.7","Classify","--loader","Diabetes_Classification_v3","--batch-size","8","--gpu","0","--repr-dims","320","--eval" 
+                
+                // exp03-182_normProb_0.3
+                // "Dia182_normProb_0.3","Classify","--loader","Diabetes_Classification_v3","--batch-size","8","--gpu","0","--repr-dims","320","--eval" 
+                // exp03-175_normProb_0.3
+                // "Dia175_normProb_0.3","Classify","--loader","Diabetes_Classification_v3","--batch-size","8","--gpu","0","--repr-dims","320","--eval" 
+                
+                // exp03-182_normProb_0.7_1
+                // "Dia182_normProb_0.7_1","Classify","--loader","Diabetes_Classification_v3_1","--batch-size","8","--gpu","0","--repr-dims","320","--eval" 
+                // exp03-175_normProb_0.7_1
+                // "Dia175_normProb_0.7_1","Classify","--loader","Diabetes_Classification_v3_1","--batch-size","8","--gpu","0","--repr-dims","320","--eval" 
+                
+                // exp03-182_normProb_0.3_1
+                // "Dia182_normProb_0.3_1","Classify","--loader","Diabetes_Classification_v3_1","--batch-size","8","--gpu","0","--repr-dims","320","--eval" 
+                // exp03-175_normProb_0.3_1
+                // "Dia175_normProb_0.3_1","Classify","--loader","Diabetes_Classification_v3_1","--batch-size","8","--gpu","0","--repr-dims","320","--eval" 
+            
+                // exp04-182_LPA
+                // "Dia182_LPA","Classify","--loader","Diabetes_Classification_v4","--batch-size","8","--gpu","0","--repr-dims","320","--eval" 
+                // exp04-175_LPA
+                // "Dia175_LPA","Classify","--loader","Diabetes_Classification_v4","--batch-size","8","--gpu","0","--repr-dims","320","--eval" 
+                
+            ]
+        }
+    ]
+}
