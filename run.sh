@@ -22,3 +22,4 @@ do
     # python train.py ACSF1 ACSF1 --loader UCR --batch-size $loop --gpu 0 --repr-dims 320 --seed 10 --eval
 done
 
+
