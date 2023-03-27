@@ -53,8 +53,8 @@ def load_Diabete_classification_v2(dataset):
     if dataset == "Dia437":
         df = pd.read_csv("datasets/Diabetes_v2/T1DM327_T2DM110_align_1+576.csv",header=None).values
     elif dataset == "Dia220":
-        # df = pd.read_csv("datasets/Diabetes_v2/T1DM110_T2DM110_align_1+576-1.csv",header=None).values
-        df = pd.read_csv("datasets/Diabetes_v2/T1DM110_T2DM110_align_1+576.csv",header=None).values
+        # df = pd.read_csv("datasets/Diabetes_v2/T1DM110_T2DM110_align_1+576.csv",header=None).values
+        df = pd.read_csv("datasets/Diabetes_v2/T1DM110_T2DM110_align_1+576-1.csv",header=None).values
     else:
         assert ""
     # print(df.values.shape)    

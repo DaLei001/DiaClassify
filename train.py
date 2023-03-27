@@ -12,26 +12,15 @@ import datautils
 from utils import init_dl_program, name_with_datetime, pkl_save, data_dropout
 # Import comet_ml at the top of your file
 from comet_ml import Experiment
+from sklearn.model_selection import GridSearchCV
 
+# # Create an experiment with your api key
+# experiment = Experiment(
+#     api_key="imiTOqzHp0lZLqDOHdoPcm678",
+#     project_name="general",
+#     workspace="dalei001",
+# )
 
-
-# # Report multiple hyperparameters using a dictionary:
-# hyper_params = {
-#     "learning_rate": 0.5,
-#     "steps": 100000,
-#     "batch_size": 50,
-# }
-# experiment.log_parameters(hyper_params)
-
-# # Or report single hyperparameters:
-# hidden_layer_size = 50
-# experiment.log_parameter("hidden_layer_size", hidden_layer_size)
-
-# # Long any time-series metrics:
-# train_accuracy = 3.14
-# experiment.log_metric("accuracy", train_accuracy, step=0)
-
-# Run your code and go to /
 
 def save_checkpoint_callback(
     save_every=1,
@@ -56,6 +45,7 @@ if __name__ == '__main__':
     parser.add_argument('--max-train-length', type=int, default=3000, help='For sequence with a length greater than <max_train_length>, it would be cropped into some sequences, each of which has a length less than <max_train_length> (defaults to 3000)')
     parser.add_argument('--iters', type=int, default=None, help='The number of iterations')
     parser.add_argument('--epochs', type=int, default=None, help='The number of epochs')
+    # parser.add_argument('--epochs', type=int, default=40, help='The number of epochs')
     parser.add_argument('--save-every', type=int, default=None, help='Save the checkpoint every <save_every> iterations/epochs')
     parser.add_argument('--seed', type=int, default=None, help='The random seed')
     parser.add_argument('--max-threads', type=int, default=None, help='The maximum allowed number of threads used by this process')
@@ -65,7 +55,6 @@ if __name__ == '__main__':
     
     print("Dataset:", args.dataset)
     print("Arguments:", str(args))
-
 
     if args.gpu == 0 and torch.cuda.is_available():
         rec_device = "cuda:0"
@@ -157,8 +146,13 @@ if __name__ == '__main__':
             raise ValueError(f"Task type {task_type} is not supported when irregular>0.")
     print('done')
     
+    # config = dict(
+    #     batch_size=args.batch_size,
+    #     lr=args.lr,
+    #     output_dims=args.repr_dims,
+    #     max_train_length=args.max_train_length
+    # )
     config = dict(
-        batch_size=args.batch_size,
         lr=args.lr,
         output_dims=args.repr_dims,
         max_train_length=args.max_train_length
@@ -170,29 +164,35 @@ if __name__ == '__main__':
 
     # 实验结果保存的文件夹
     run_dir = 'training/exp02-Dia220-1/' + args.dataset + '__' + name_with_datetime(args.run_name)
+    # run_dir = 'training/exp_ACSF1/' + args.dataset + '__' + name_with_datetime(args.run_name)
     os.makedirs(run_dir, exist_ok=True)
     
     t = time.time()
     
-    model = TS2Vec_wl(
+    model = TS2Vec(
         input_dims=train_data.shape[-1],
         device=device,
         **config
     )
-    # Dia484,Dia220,Diabetes_v2
+
     loss_log = model.fit(
         train_data,
-        train_labels_1, 
-        train_labels_2, 
+        # train_labels_1, 
+        # train_labels_2, 
         n_epochs=args.epochs,
         n_iters=args.iters,
         verbose=True
     )
 
-    # experiment.log_parameter(parameters=model.n_epochs)
-    
-    # metrics = {'loss_log':10}
-    # experiment.log_metrics("loss_log", loss_log, step=1)
+    # Dia484,Dia220,Diabetes_v2
+    # loss_log = model.fit(
+    #     train_data,
+    #     train_labels_1, 
+    #     train_labels_2, 
+    #     n_epochs=args.epochs,
+    #     n_iters=args.iters,
+    #     verbose=True
+    # )
 
     ## Dia175,Dia182,Diabetes_v3
     # loss_log = model.fit(

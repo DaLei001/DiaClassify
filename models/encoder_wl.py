@@ -220,9 +220,11 @@ class SLNet_0(nn.Module):
 
         self.conv1d_x1 = nn.Conv1d(in_channels=self.input_dims,out_channels=3,kernel_size=3,padding=0)
         self.conv1d_x2 = nn.Conv1d(in_channels=self.input_dims,out_channels=3,kernel_size=3,padding=0)
-        
-        self.GRU_x1 = nn.GRU(input_size=3,hidden_size=100,num_layers=1,batch_first=True,dropout=0.2,bidirectional=True)
-        self.GRU_x2 = nn.GRU(input_size=3,hidden_size=100,num_layers=1,batch_first=True,dropout=0.2,bidirectional=True)
+        self.BN1 = nn.BatchNorm1d(3)
+        self.BN2 = nn.BatchNorm1d(3)
+
+        self.GRU_x1 = nn.GRU(input_size=3,hidden_size=100,num_layers=1,batch_first=True,dropout=0.5,bidirectional=True)
+        self.GRU_x2 = nn.GRU(input_size=3,hidden_size=100,num_layers=1,batch_first=True,dropout=0.5,bidirectional=True)
         
         # self.GRU_x1 = nn.GRU(input_size=self.input_dims,hidden_size=20,num_layers=1,batch_first=True,dropout=0.2,bidirectional=True)
         # self.GRU_x2 = nn.GRU(input_size=self.input_dims,hidden_size=20,num_layers=1,batch_first=True,dropout=0.2,bidirectional=True)
@@ -241,8 +243,8 @@ class SLNet_0(nn.Module):
         x1 = x.permute(0,2,1)
         x2 = x.permute(0,2,1)
 
-        x1 = self.conv1d_x1(x1)
-        x2 = self.conv1d_x2(x2)
+        x1 = self.BN1(F.relu(self.conv1d_x1(x1)))
+        x2 = self.BN2(F.relu(self.conv1d_x2(x2)))
 
         x1 = x1.permute(0,2,1)
         x2 = x2.permute(0,2,1)
@@ -253,12 +255,12 @@ class SLNet_0(nn.Module):
         x1 = nn.Flatten()(x1)
         x2 = nn.Flatten()(x2)
         
-        # x1 = F.relu(self.x1_fc1(x1))
-        x1 = self.x1_fc1(F.dropout(x1,0.2))
+        x1 = self.x1_fc1(x1)
+        # x1 = self.x1_fc2(F.dropout(x1,0.5))
         x1 = self.x1_fc2(x1)
-        x2 = F.relu(self.x2_fc1(x2))
-        x2 = self.x2_fc2(F.dropout(x2,0.2))
-        # x2 = self.x2_fc2(x2)
+        x2 = self.x2_fc1(x2)
+        # x2 = self.x2_fc2(F.dropout(x2,0.5))
+        x2 = self.x2_fc2(x2)
 
         return x1, x2
 

@@ -11,6 +11,7 @@ from models.losses import hierarchical_contrastive_loss
 from utils import take_per_row, split_with_nan, centerize_vary_length_series, torch_pad_nan
 from utils import lifting, sfa, lifting_sfa
 import math
+from models.losses import UncertaintyLoss, DynamicWeightAverageLoss
 
 class PretrainDataset(Dataset):
     
@@ -61,10 +62,6 @@ class TS2Vec_wl:
         '''
         
         super().__init__()
-
-        
-        
-
         self.device = device
         self.lr = lr
         self.batch_size = batch_size
@@ -80,7 +77,7 @@ class TS2Vec_wl:
         # self._net = make_model(11,11,N=2).to(self.device)
 
         # superviselearning_net
-        self.SL_net = SLNet_1(input_dims=input_dims, output_dims=output_dims).to(self.device)
+        self.SL_net = SLNet_0(input_dims=input_dims, output_dims=output_dims).to(self.device)
         
         self.net = torch.optim.swa_utils.AveragedModel(self._net)
         self.net.update_parameters(self._net)
@@ -91,8 +88,8 @@ class TS2Vec_wl:
         self.n_epochs = 0
         self.n_iters = 0
     
-    # def fit(self, train_data, n_epochs=None, n_iters=None, verbose=False):
-    def fit(self, train_data, label_1, label_2, n_epochs=None, n_iters=None, verbose=False):
+    def fit(self, train_data, n_epochs=None, n_iters=None, verbose=False):
+    # def fit(self, train_data, label_1, label_2, n_epochs=None, n_iters=None, verbose=False):
     # def fit(self, train_data, more_train_laebls, n_epochs=None, n_iters=None, verbose=False):
         ''' Training the TS2Vec model.
         
@@ -106,7 +103,6 @@ class TS2Vec_wl:
             loss_log: a list containing the training losses on each epoch.
         '''
         assert train_data.ndim == 3
-
         
         if n_iters is None and n_epochs is None:
             n_iters = 200 if train_data.size <= 100000 else 600  # default param for n_iters
@@ -123,13 +119,26 @@ class TS2Vec_wl:
         train_data = train_data[~np.isnan(train_data).all(axis=2).all(axis=1)]
 
         a = torch.from_numpy(train_data).to(torch.float)
-        # train_dataset = TensorDataset(torch.from_numpy(train_data).to(torch.float))
-        train_dataset = TensorDataset(torch.from_numpy(train_data).to(torch.float), torch.from_numpy(label_1).to(torch.long), torch.from_numpy(label_2).to(torch.long))
+        train_dataset = TensorDataset(torch.from_numpy(train_data).to(torch.float))
+        # train_dataset = TensorDataset(torch.from_numpy(train_data).to(torch.float), torch.from_numpy(label_1).to(torch.long), torch.from_numpy(label_2).to(torch.long))
         # train_dataset = TensorDataset(torch.from_numpy(train_data).to(torch.float), torch.from_numpy(more_train_laebls[:,10]).to(torch.long), torch.from_numpy(more_train_laebls[:,5]).to(torch.long))
         # train_dataset = PretrainDataset(torch.from_numpy(train_data).to(torch.float))
         train_loader = DataLoader(train_dataset, batch_size=min(self.batch_size, len(train_dataset)), shuffle=True, drop_last=True)
         
-        optimizer = torch.optim.AdamW(self._net.parameters(), lr=self.lr)
+        # optimizer = torch.optim.AdamW(self._net.parameters(), lr=self.lr)
+        # optimizer = torch.optim.Adam(self._net.parameters(), lr=self.lr)
+
+        # 定义uncertainty loss
+        uncertainty_loss_func = UncertaintyLoss(v_num=2)
+        uncertainty_loss_func.to(self.device)
+
+        # 定义Dynamic Weight Average Loss
+        dynamic_loss_func = DynamicWeightAverageLoss(v_num=2)
+        dynamic_loss_func.to(self.device)
+
+        # optimizer = torch.optim.AdamW(filter(lambda x: x.requires_grad, list(self._net.parameters()) + list(uncertainty_loss_func.parameters())), lr=self.lr)
+        optimizer = torch.optim.AdamW(filter(lambda x: x.requires_grad, list(self._net.parameters()) + list(uncertainty_loss_func.parameters())), lr=self.lr, betas=(0.9,0.98), eps=1e-09)
+        # optimizer = torch.optim.Adam(filter(lambda x: x.requires_grad, list(self._net.parameters()) + list(uncertainty_loss_func.parameters()) +list(dynamic_loss_func.parameters())), lr=self.lr, betas=(0.9,0.98), eps=1e-09) # {'acc': 0.8863636363636364, 'auprc': 0.9327367007249177}
         
         loss_log = []
         
@@ -139,26 +148,31 @@ class TS2Vec_wl:
             
             cum_loss = 0
             n_epoch_iters = 0
+
+            total_epoch = 300
+            cost = np.zeros(24, dtype=np.float32)
+            avg_cost = np.zeros([total_epoch, 24], dtype=np.float32)
+            train_batch = len(train_loader)
             
             interrupted = False
-            # for batch_x in train_loader:
-            for batch_x, batch_y1, batch_y2 in train_loader:
+            for batch_x in train_loader:
+            # for batch_x, batch_y1, batch_y2 in train_loader:
                 if n_iters is not None and self.n_iters >= n_iters:
                     interrupted = True
                     break
 
-                # x = batch_x[0]
-                x = batch_x
+                x = batch_x[0]
+                # x = batch_x
                 if self.max_train_length is not None and x.size(1) > self.max_train_length:
                     window_offset = np.random.randint(x.size(1) - self.max_train_length + 1)
                     x = x[:, window_offset : window_offset + self.max_train_length]
                 # x = x.to(self.device)
-                batch_y1 = batch_y1.to(self.device)
-                batch_y2 = batch_y2.to(self.device)
+                # batch_y1 = batch_y1.to(self.device)
+                # batch_y2 = batch_y2.to(self.device)
 
                 # Supervise Learning
                 x1 = x.to(self.device)
-                out3, out4 = self.SL_net(x1)
+                # out3, out4 = self.SL_net(x1)
 
                 ts_l = x.size(1)
 
@@ -216,24 +230,48 @@ class TS2Vec_wl:
 
                 optimizer.zero_grad()
                 
+                loss1, loss2 = hierarchical_contrastive_loss(
+                    out1,
+                    out2,
+                    temporal_unit=self.temporal_unit
+                )
                 # loss = hierarchical_contrastive_loss(
                 #     out1,
                 #     out2,
+                #     out3,
+                #     out4,
+                #     batch_y1,
+                #     batch_y2,
                 #     temporal_unit=self.temporal_unit
                 # )
-                loss = hierarchical_contrastive_loss(
-                    out1,
-                    out2,
-                    out3,
-                    out4,
-                    batch_y1,
-                    batch_y2,
-                    temporal_unit=self.temporal_unit
-                )               
+
+                # loss1, loss2 = hierarchical_contrastive_loss(
+                #     out1,
+                #     out2,
+                #     out3,
+                #     out4,
+                #     batch_y1,
+                #     batch_y2,
+                #     temporal_unit=self.temporal_unit
+                # )
                 
+                # 自监督学习+有监督学习(高血压和视网膜病变)的损失函数经过不确定加权
+                uncertainty_loss = uncertainty_loss_func(loss1, loss2)
+                # dynamic_loss = dynamic_loss_func(self.n_epochs, loss1, loss2)
+
+                # loss = uncertainty_loss + dynamic_loss
+
+                loss = uncertainty_loss
+
                 loss.backward()
                 optimizer.step()
                 self.net.update_parameters(self._net)
+
+                # 计算DWALoss需要的数据备份
+                # cost[0] = loss1.item()
+                # cost[1] = loss2.item()
+                # train_batch = len(train_loader)
+                # avg_cost[self.n_epochs, :2] += cost[:2] / train_batch
                     
                 cum_loss += loss.item()
                 n_epoch_iters += 1
