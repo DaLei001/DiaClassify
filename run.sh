@@ -21,3 +21,4 @@ do
     python train.py Dia220 Classify --loader Diabetes_Classification_v2 --batch-size 8 --gpu 0 --repr-dims 320 --eval
     # python train.py ACSF1 ACSF1 --loader UCR --batch-size $loop --gpu 0 --repr-dims 320 --seed 10 --eval
 done
+
