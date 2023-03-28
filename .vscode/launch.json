@@ -19,7 +19,7 @@
                 // exp02
                 // "Dia437","Classify","--loader","Diabetes_Classification_v2","--batch-size","8","--gpu","0","--repr-dims","320","--eval" 
                 // exp02-220
-                "Dia220","Classify","--loader","Diabetes_Classification_v2","--batch-size","8","--gpu","0","--repr-dims","320","--epochs","10","--eval"
+                "Dia220","Classify","--loader","Diabetes_Classification_v2","--batch-size","8","--gpu","0","--repr-dims","320","--seed","0","--eval"
                 
                 // exp03-182_normProb_0.7
                 // "Dia182_normProb_0.7","Classify","--loader","Diabetes_Classification_v3","--batch-size","8","--gpu","0","--repr-dims","320","--eval" 
