@@ -116,7 +116,7 @@ def sfa(data, n_comp=1):
         # extracted_features:提取的慢特征
 
     sfa_model = SFA()
-    data = data.numpy()
+    data = data.cpu().numpy()
     extracted_features = sfa_model.fit_transform(data,conponents=n_comp)
     extracted_features = torch.Tensor(extracted_features)
     return extracted_features

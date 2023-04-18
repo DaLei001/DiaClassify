@@ -6,6 +6,22 @@ from torch import nn
 import torch.nn.functional as F
 # import torchvision
 
+class TransformerModel1(nn.Module):
+    def __init__(self, input_size, output_size, num_layers=6, num_heads=8, hidden_size=512):
+        super(TransformerModel1, self).__init__()
+        self.embedding = nn.Linear(input_size, hidden_size)
+        self.encoder_layers = nn.TransformerEncoderLayer(hidden_size, num_heads)
+        self.encoder = nn.TransformerEncoder(self.encoder_layers, num_layers)
+        self.fc = nn.Linear(hidden_size, output_size)
+    
+    def forward(self, x):
+        x = self.embedding(x)
+        x = x.permute(1, 0, 2)
+        x = self.encoder(x)
+        x = x.mean(dim=0)
+        x = self.fc(x)
+        return x
+
 class LinearEncoder(nn.Module):
     def __init__(self, input_dims, output_dims) -> None:
         super().__init__()

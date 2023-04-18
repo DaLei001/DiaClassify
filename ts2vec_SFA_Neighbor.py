@@ -1,14 +1,18 @@
+## This python file is the implementation of combination of ts2vec and SFA
+import random
 import torch
 import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
 import numpy as np
 from models import *
-from models.losses import hierarchical_contrastive_loss
-from utils import take_per_row, split_with_nan, centerize_vary_length_series, torch_pad_nan
+from models.encoder_Transformer import make_model
+from models.encoder_wl import Transformer, TransformerModel, TransformerModel1
+from models.losses import DynamicWeightAverageLoss, UncertaintyLoss, hierarchical_contrastive_loss, hierarchical_contrastive_loss_neighbor, hierarchical_contrastive_loss_return2, supervised_contrastive_loss
+from utils import lifting_sfa, take_per_row, split_with_nan, centerize_vary_length_series, torch_pad_nan
 import math
 
-class TS2Vec:
-    '''The TS2Vec model'''
+class TS2Vec_SFA_Neighbor:
+    '''The TS2Vec model + SFA + Neighbor'''
     
     def __init__(
         self,
@@ -48,10 +52,11 @@ class TS2Vec:
         self.temporal_unit = temporal_unit
         
         self._net = TSEncoder(input_dims=input_dims, output_dims=output_dims, hidden_dims=hidden_dims, depth=depth).to(self.device)
-        # self._net = LinearEncoder(input_dims=input_dims, output_dims=output_dims).to(self.device)
-        # self._net = LstmEncoder(input_dims=input_dims, output_dims=output_dims).to(self.device)
         # self._net = CnnLstmEncoder(input_dims=input_dims, output_dims=output_dims).to(self.device)
-        
+        # self._net = Transformer().to(self.device)
+        # self._net = make_model(11,11,N=2).to(self.device)
+        # self._net = TransformerModel1(input_dims, output_dims).to(self.device)
+
         self.net = torch.optim.swa_utils.AveragedModel(self._net)
         self.net.update_parameters(self._net)
         
@@ -61,13 +66,14 @@ class TS2Vec:
         self.n_epochs = 0
         self.n_iters = 0
     
-    def fit(self, train_data, n_epochs=None, n_iters=None, verbose=False, optimal="AdamW"):
+    def fit(self, train_data, train_neighbor, n_epochs=None, n_iters=None, verbose=False, optimal="AdamW", sample_pair="TS2Vec"):
         ''' Training the TS2Vec model.
         
         Args:
             train_data (numpy.ndarray): The training data. It should have a shape of (n_instance, n_timestamps, n_features). All missing data should be set to NaN.
             n_epochs (Union[int, NoneType]): The number of epochs. When this reaches, the training stops.
-            n_iters (Union[int, NoneType]): The number of iterations. When this reaches, the training stops. If both n_epochs and n_iters are not specified, a default setting would be used that sets n_iters to 200 for a dataset with size <= 100000, 600 otherwise.
+            n_iters (Union[int, NoneType]): The number of iterations. When this reaches, the training stops. 
+                If both n_epochs and n_iters are not specified, a default setting would be used that sets n_iters to 200 for a dataset with size <= 100000, 600 otherwise.
             verbose (bool): Whether to print the training loss after each epoch.
             
         Returns:
@@ -75,6 +81,7 @@ class TS2Vec:
         '''
         assert train_data.ndim == 3
         
+        # 未设定epoch时，总的epoch数 = n_iters/(train_data_num/batch_size) = n_iters * batch_size / train_data_num
         if n_iters is None and n_epochs is None:
             n_iters = 200 if train_data.size <= 100000 else 600  # default param for n_iters
         
@@ -89,11 +96,25 @@ class TS2Vec:
                 
         train_data = train_data[~np.isnan(train_data).all(axis=2).all(axis=1)]
         
-        train_dataset = TensorDataset(torch.from_numpy(train_data).to(torch.float))
-        train_loader = DataLoader(train_dataset, batch_size=min(self.batch_size, len(train_dataset)), shuffle=True, drop_last=True)
+        if sample_pair == "TS2Vec" or sample_pair == "SlowFeature":
+            train_dataset = TensorDataset(torch.from_numpy(train_data).to(torch.float))
+            train_loader = DataLoader(train_dataset, batch_size=min(self.batch_size, len(train_dataset)), shuffle=True, drop_last=True)
+        elif sample_pair == "TS2Vec_SFA_Neighbor":
+            train_dataset = TensorDataset(torch.from_numpy(train_data).to(torch.float),torch.from_numpy(train_neighbor).to(torch.float))
+            train_loader = DataLoader(train_dataset, batch_size=min(self.batch_size, len(train_dataset)), shuffle=True, drop_last=True)
         
+        # 定义uncertainty loss
+        uncertainty_loss_func = UncertaintyLoss(v_num=2)
+        uncertainty_loss_func.to(self.device)
+
+        # 定义Dynamic Weight Average Loss
+        dynamic_loss_func = DynamicWeightAverageLoss(v_num=2)
+        dynamic_loss_func.to(self.device)
+
         if optimal == "AdamW":
             optimizer = torch.optim.AdamW(self._net.parameters(), lr=self.lr)
+            # optimizer = torch.optim.AdamW(filter(lambda x: x.requires_grad, \
+                                                #  list(self._net.parameters()) + list(uncertainty_loss_func.parameters())), lr=self.lr)
         elif optimal == "Adam":
             optimizer = torch.optim.Adam(self._net.parameters(), lr=self.lr)
         elif optimal == "SGD":
@@ -102,62 +123,131 @@ class TS2Vec:
             optimizer = torch.optim.SGD(self._net.parameters(), lr=self.lr, momentum=0.9)
         else:
             raise RuntimeError("Wrong optimizer!!")
-
+        
         loss_log = []
         
         while True:
+            # 自定义n_epochs时的训练停止条件
             if n_epochs is not None and self.n_epochs >= n_epochs:
                 break
             
             cum_loss = 0
             n_epoch_iters = 0
+
+            # total_epoch = 300
+            # cost = np.zeros(24, dtype=np.float32)
+            # avg_cost = np.zeros([total_epoch, 24], dtype=np.float32)
+            # train_batch = len(train_loader)
             
             interrupted = False
             for batch in train_loader:
+                # 未自定义n_epochs时的训练停止条件
                 if n_iters is not None and self.n_iters >= n_iters:
                     interrupted = True
                     break
                 
-                x = batch[0]
+                x = batch[0] # x:[8,576,1],batch:[0,8,576,1]
+                x = x.to(self.device)
+
+                if sample_pair == "TS2Vec_SFA_Neighbor":
+                    neighbor = batch[1]
+                    neighbor = neighbor.to(self.device)
+
+                # self.max_train_length默认设定为3000，x.size(1)=576，因此不会进入该循环
                 if self.max_train_length is not None and x.size(1) > self.max_train_length:
                     window_offset = np.random.randint(x.size(1) - self.max_train_length + 1)
                     x = x[:, window_offset : window_offset + self.max_train_length]
-                x = x.to(self.device)
                 
-                ts_l = x.size(1)
-                crop_l = np.random.randint(low=2 ** (self.temporal_unit + 1), high=ts_l+1)
-                crop_left = np.random.randint(ts_l - crop_l + 1)
-                crop_right = crop_left + crop_l
-                crop_eleft = np.random.randint(crop_left + 1)
-                crop_eright = np.random.randint(low=crop_right, high=ts_l + 1)
-                crop_offset = np.random.randint(low=-crop_eleft, high=ts_l - crop_eright + 1, size=x.size(0))
                 
                 optimizer.zero_grad()
+
+                # 构建样本对的方式，TS2Vec：使用TS2Vec原文中的方法，SlowFeature：使用慢特征分析的方法
+                if sample_pair == "TS2Vec":
+                    ts_l = x.size(1)
+                    crop_l = np.random.randint(low=2 ** (self.temporal_unit + 1), high=ts_l+1)
+                    crop_left = np.random.randint(ts_l - crop_l + 1)
+                    crop_right = crop_left + crop_l
+                    crop_eleft = np.random.randint(crop_left + 1)
+                    crop_eright = np.random.randint(low=crop_right, high=ts_l + 1)
+                    crop_offset = np.random.randint(low=-crop_eleft, high=ts_l - crop_eright + 1, size=x.size(0))
+                    
+                    out1 = self._net(take_per_row(x, crop_offset + crop_eleft, crop_right - crop_eleft))
+                    out1 = out1[:, -crop_l:]
+                    out2 = self._net(take_per_row(x, crop_offset + crop_left, crop_eright - crop_left))
+                    out2 = out2[:, :crop_l]
+                elif sample_pair == "SlowFeature" or sample_pair == "TS2Vec_SFA_Neighbor":
+                    ts_l = x.size(1)
+
+                    # 一个样本的前3/4和后3/4作为正样本对
+                    # split_point = 0.9
+                    # split_point = random.uniform(0.7,0.99)
+                    split_point = random.uniform(0.49,0.99)  # 0.84-0.86
+                    # split_point = random.uniform(0.49,0.75)
+                    if ts_l % 2 == 0:  # 能整除
+                        abc = x[:,:int(ts_l*split_point),:]
+                        bcd = x[:,int(ts_l*(1-split_point)):,:]
+                    else:
+                        abc = x[:,:int(ts_l*split_point),:]
+                        bcd = x[:,int(ts_l*(1-split_point)):-1,:]            
+
+                    # abc, bcd = lifting_sfa(abc, bcd, sub_length=300, dim=10, n_comp=1)
+                    abc, bcd = lifting_sfa(abc, bcd, sub_length=int(576*split_point*0.9), dim=5, n_comp=1)
+
+                    out1 = self._net(abc.to(self.device))
+                    out2 = self._net(bcd.to(self.device))
                 
-                ab1 = crop_offset + crop_eleft
-                ab2 = crop_right - crop_eleft
-                abc = take_per_row(x, ab1, ab2)
-                out10 = self._net(abc)
-                # out1 = self._net(take_per_row(x, crop_offset + crop_eleft, crop_right - crop_eleft))
-                out1 = out10[:, -crop_l:]
+                if sample_pair == "SlowFeature" or sample_pair == "SlowFeature":
+                    loss = hierarchical_contrastive_loss(
+                        out1,
+                        out2,
+                        temporal_unit=self.temporal_unit
+                    )
+                elif sample_pair == "TS2Vec_SFA_Neighbor":
+                    # loss = hierarchical_contrastive_loss_neighbor(
+                    #     out1,
+                    #     out2,
+                    #     neighbor,
+                    #     temporal_unit=self.temporal_unit
+                    # )  
+                    loss1, aggregation_loss, disc_loss = supervised_contrastive_loss(
+                        out1,
+                        out2,
+                        neighbor
+                    )  
+                    loss2 = hierarchical_contrastive_loss(
+                        out1,
+                        out2,
+                        temporal_unit=self.temporal_unit
+                    )
+                    loss = loss1 + loss2
+                    # loss = aggregation_loss
                 
-                bc1 = crop_offset + crop_left
-                bc2 = crop_eright - crop_left
-                bcd = take_per_row(x, bc1, bc2)
-                out20 = self._net(bcd)
-                # out2 = self._net(take_per_row(x, crop_offset + crop_left, crop_eright - crop_left))
-                out2 = out20[:, :crop_l]
-                
-                loss = hierarchical_contrastive_loss(
-                    out1,
-                    out2,
-                    temporal_unit=self.temporal_unit
-                )
+                # loss = hierarchical_contrastive_loss(
+                #     out1,
+                #     out2,
+                #     temporal_unit=3
+                # )
+
+                # loss1, loss2 = hierarchical_contrastive_loss_return2(
+                #     out1,
+                #     out2,
+                #     temporal_unit=self.temporal_unit
+                # )
+
+                # loss1 = uncertainty_loss_func(loss1, loss2)
+                # loss2 = dynamic_loss_func(self.n_epochs, loss1, loss2)
+                # loss = loss1 + loss2
                 
                 loss.backward()
                 optimizer.step()
                 self.net.update_parameters(self._net)
                     
+                # # 计算DWALoss需要的数据备份
+                # cost[0] = loss1.item()
+                # cost[1] = loss2.item()
+                # train_batch = len(train_loader)
+                # avg_cost[self.n_epochs, :2] += cost[:2] / train_batch
+
                 cum_loss += loss.item()
                 n_epoch_iters += 1
                 

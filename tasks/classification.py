@@ -7,6 +7,8 @@ def eval_classification(model, train_data, train_labels, test_data, test_labels,
     assert train_labels.ndim == 1 or train_labels.ndim == 2
     train_repr = model.encode(train_data, encoding_window='full_series' if train_labels.ndim == 1 else None)
     test_repr = model.encode(test_data, encoding_window='full_series' if train_labels.ndim == 1 else None)
+    # train_repr = train_data.squeeze()
+    # test_repr = test_data.squeeze()
 
     if eval_protocol == 'linear':
         fit_clf = eval_protocols.fit_lr

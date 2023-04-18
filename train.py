@@ -6,7 +6,9 @@ import sys
 import time
 import datetime
 from ts2vec import TS2Vec
+from ts2vec_SFA_Neighbor import TS2Vec_SFA_Neighbor
 from ts2vec_wl import TS2Vec_wl
+from ts2vec_SFA import TS2Vec_SFA
 import tasks
 import datautils
 from utils import init_dl_program, name_with_datetime, pkl_save, data_dropout
@@ -41,6 +43,7 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', type=int, default=0, help='The gpu no. used for training and inference (defaults to 0)')
     parser.add_argument('--batch-size', type=int, default=8, help='The batch size (defaults to 8)')
     parser.add_argument('--lr', type=float, default=0.001, help='The learning rate (defaults to 0.001)')
+    # parser.add_argument('--lr', type=float, default=0.0001, help='The learning rate (defaults to 0.001)')
     parser.add_argument('--repr-dims', type=int, default=320, help='The representation dimension (defaults to 320)')
     parser.add_argument('--max-train-length', type=int, default=3000, help='For sequence with a length greater than <max_train_length>, it would be cropped into some sequences, each of which has a length less than <max_train_length> (defaults to 3000)')
     parser.add_argument('--iters', type=int, default=None, help='The number of iterations')
@@ -51,6 +54,7 @@ if __name__ == '__main__':
     parser.add_argument('--max-threads', type=int, default=None, help='The maximum allowed number of threads used by this process')
     parser.add_argument('--eval', action="store_true", help='Whether to perform evaluation after training')
     parser.add_argument('--irregular', type=float, default=0, help='The ratio of missing observations (defaults to 0)')
+    parser.add_argument('--dataNormalization', type=bool, default=False, help='the flag to determine whether to add the normalization operation for data')
     args = parser.parse_args()
     
     print("Dataset:", args.dataset)
@@ -66,11 +70,20 @@ if __name__ == '__main__':
     print('Loading data... ', end='')
     if args.loader == 'Diabetes_Classification':
         task_type = 'classification'
-        train_data, train_labels, test_data, test_labels = datautils.load_Diabete_classification(args.dataset)
+        train_data, train_labels, test_data, test_labels \
+            = datautils.load_Diabete_classification(args.dataset)
     
     elif args.loader == 'Diabetes_Classification_v2':
         task_type = 'classification'
-        train_data, train_labels, train_labels_1, train_labels_2, test_data, test_labels, test_labels_2, test_labels_3 = datautils.load_Diabete_classification_v2(args.dataset)
+        isNormalized = args.dataNormalization
+        train_data, train_labels, train_labels_1, train_labels_2, test_data, test_labels, \
+            test_labels_2, test_labels_3 = datautils.load_Diabete_classification_v2(args.dataset, isNormalized)
+    
+    elif args.loader == 'Diabetes_Classification_v2_1':
+        task_type = 'classification'
+        isNormalized = args.dataNormalization
+        train_data, train_labels, test_data, test_labels \
+            = datautils.load_Diabete_classification_v2_1(args.dataset, isNormalized)
     
     elif args.loader == 'Diabetes_Classification_v3':
         task_type = 'classification'
@@ -95,7 +108,30 @@ if __name__ == '__main__':
         train_labels = train_labels[:,0]
         more_test_laebls = test_labels[:,1:]
         test_labels = test_labels[:,0]
-
+    
+    elif args.loader == 'Diabetes_Classification_v5':
+        task_type = 'classification'
+        # isNormalized = args.dataNormalization
+        isBioNormalized = True
+        train_data, train_bio_data, train_labels, test_data, test_bio_data, test_labels\
+            = datautils.load_Diabete_classification_v5(args.dataset, isBioNormalized)
+    
+    elif args.loader == 'Diabetes_Classification_v6':
+        task_type = 'classification'
+        isBioNormalized = True
+        train_data, train_bio_data, train_labels,\
+              val_data, val_bio_data, val_labels,\
+              test_data, test_bio_data, test_labels\
+                = datautils.load_Diabete_classification_v6(args.dataset, isBioNormalized)
+    
+    elif args.loader == 'Diabetes_Classification_v6_neighbor':
+        task_type = 'classification'
+        isBioNormalized = True
+        train_data, train_bio_data, train_labels, train_neighbor,\
+              val_data, val_bio_data, val_labels, val_neighbor,\
+              test_data, test_bio_data, test_labels, test_neighbor\
+                = datautils.load_Diabete_classification_v6_Neighbor(args.dataset, isBioNormalized)
+        
     elif args.loader == 'UCR':
         task_type = 'classification'
         train_data, train_labels, test_data, test_labels = datautils.load_UCR(args.dataset)
@@ -146,13 +182,8 @@ if __name__ == '__main__':
             raise ValueError(f"Task type {task_type} is not supported when irregular>0.")
     print('done')
     
-    # config = dict(
-    #     batch_size=args.batch_size,
-    #     lr=args.lr,
-    #     output_dims=args.repr_dims,
-    #     max_train_length=args.max_train_length
-    # )
     config = dict(
+        batch_size=args.batch_size,
         lr=args.lr,
         output_dims=args.repr_dims,
         max_train_length=args.max_train_length
@@ -163,24 +194,26 @@ if __name__ == '__main__':
         config[f'after_{unit}_callback'] = save_checkpoint_callback(args.save_every, unit)
 
     # 实验结果保存的文件夹
-    run_dir = 'training/exp02-Dia220-1/' + args.dataset + '__' + name_with_datetime(args.run_name)
+    run_dir = 'training/exp02_1-Dia182_FGM/' + args.dataset + '__' + name_with_datetime(args.run_name)
     # run_dir = 'training/exp_ACSF1/' + args.dataset + '__' + name_with_datetime(args.run_name)
     os.makedirs(run_dir, exist_ok=True)
     
     t = time.time()
-    
-    model = TS2Vec(
-        input_dims=train_data.shape[-1],
-        device=device,
-        **config
-    )
 
-    loss_log = model.fit(
-        train_data,
-        n_epochs=args.epochs,
-        n_iters=args.iters,
-        verbose=True
-    )
+    # optimal:AdamW, Adam, SGD, SGD_momentum0.9
+    optimal="Adam"
+    # TS2Vec, SlowFeature,构建样本对的方式，TS2Vec：使用TS2Vec原文中的方法，SlowFeature：使用慢特征分析的方法
+    # TS2Vec_SFA_Neighbor:使用慢特征+邻域对比损失
+    sample_pair="TS2Vec_SFA_Neighbor" # TS2Vec, SlowFeature,构建样本对的方式，TS2Vec：使用TS2Vec原文中的方法，SlowFeature：使用慢特征分析的方法
+
+    if sample_pair == "SlowFeature" or sample_pair == "SlowFeature":
+        model = TS2Vec_SFA(input_dims=train_data.shape[-1], device=device, **config)
+        loss_log = model.fit(train_data, n_epochs=args.epochs, n_iters=args.iters, \
+                             verbose=True, optimal=optimal, sample_pair=sample_pair)
+    elif sample_pair == "TS2Vec_SFA_Neighbor":
+        model = TS2Vec_SFA_Neighbor(input_dims=train_data.shape[-1], device=device, **config)
+        loss_log = model.fit(train_data, train_neighbor, n_epochs=args.epochs, n_iters=args.iters, \
+                             verbose=True, optimal=optimal, sample_pair=sample_pair)
 
     # Dia484,Dia220,Diabetes_v2
     # loss_log = model.fit(
@@ -210,7 +243,8 @@ if __name__ == '__main__':
 
     if args.eval:
         if task_type == 'classification':
-            out, eval_res = tasks.eval_classification(model, train_data, train_labels, test_data, test_labels, eval_protocol='svm')
+            # out, eval_res = tasks.eval_classification(model, train_data, train_labels, test_data, test_labels, eval_protocol='svm')
+            out, eval_res = tasks.eval_classification(model, val_data, val_labels, test_data, test_labels, eval_protocol='svm')
         elif task_type == 'forecasting':
             out, eval_res = tasks.eval_forecasting(model, data, train_slice, valid_slice, test_slice, scaler, pred_lens, n_covariate_cols)
         elif task_type == 'anomaly_detection':

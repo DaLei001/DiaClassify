@@ -48,7 +48,7 @@ def load_Diabete_classification(dataset):
     # X_test = (X_test - mean) / std
     return X_train[..., np.newaxis], train_labels, X_test[..., np.newaxis], test_labels
 
-def load_Diabete_classification_v2(dataset):
+def load_Diabete_classification_v2(dataset, normalize=False):
     # 有辅助任务的数据，使用的是高血压和视网膜病变数据做辅助任务的标签，Dia220 是数据类别均衡化之后的数据
     if dataset == "Dia437":
         df = pd.read_csv("datasets/Diabetes_v2/T1DM327_T2DM110_align_1+576.csv",header=None).values
@@ -106,11 +106,45 @@ def load_Diabete_classification_v2(dataset):
     test_labels_2 = np.vectorize(transform_2.get)(y_test_2)
     test_labels_3 = np.vectorize(transform_3.get)(y_test_3)
 
-    # mean = np.nanmean(X_train)
-    # std = np.nanstd(X_train)
-    # X_train = (X_train - mean) / std
-    # X_test = (X_test - mean) / std
+    if normalize == True:
+        mean = np.nanmean(X_train)
+        std = np.nanstd(X_train)
+        X_train = (X_train - mean) / std
+        X_test = (X_test - mean) / std
+
     return X_train[..., np.newaxis], train_labels_1, train_labels_2, train_labels_3, X_test[..., np.newaxis], test_labels_1, test_labels_2, test_labels_3 
+
+def load_Diabete_classification_v2_1(dataset, normalize=False):
+    # p2中使用的数据Dia182以及Dia175，没有辅助任务的数据，仅使用FGM数据
+    if dataset == "Dia182_FGM":
+        df = pd.read_csv("datasets/Diabetes_v2/All_DM_sub_60_sample_182.csv",header=None).values
+    elif dataset == "Dia175_FGM":
+        df = pd.read_csv("datasets/Diabetes_v2/All_DM_sub_110_sample_175.csv",header=None).values
+    else:
+        assert ""
+    X_df = df[:,1:-11]
+    y_df = df[:,0]
+
+    X_train, X_test, y_train, y_test = train_test_split(X_df, y_df, test_size=0.2, random_state=42, stratify=y_df, shuffle=True)
+
+    # Move the labels to {0, ..., L-1}
+    labels_1 = np.unique(y_train)
+    transform_1 = {}
+    for i, l in enumerate(labels_1):
+        transform_1[l] = i
+
+    X_train = X_train.astype(np.float64)
+    train_labels = np.vectorize(transform_1.get)(y_train)
+    X_test = X_test.astype(np.float64)
+    test_labels = np.vectorize(transform_1.get)(y_test)
+
+    if normalize == True:
+        mean = np.nanmean(X_train)
+        std = np.nanstd(X_train)
+        X_train = (X_train - mean) / std
+        X_test = (X_test - mean) / std
+        
+    return X_train[..., np.newaxis], train_labels, X_test[..., np.newaxis], test_labels 
 
 def load_Diabete_classification_v3(dataset):
     # 有辅助任务的数据，使用paper2使用的数据
@@ -260,6 +294,321 @@ def load_Diabete_classification_v4(dataset):
     # X_train = (X_train - mean) / std
     # X_test = (X_test - mean) / std
     return X_train[..., np.newaxis], train_labels, X_test[..., np.newaxis], test_labels
+
+def load_Diabete_classification_v5(dataset, isBioNormalized=True):
+    # 没有辅助任务，FGM使用ts2vec+sfa，Biomarkers使用VAE算法
+    # Dia182：train:test = 145:37
+    # Dia175：train:test = 140:35
+    if dataset == "Dia182": # sub_60_sample_182
+        df = pd.read_csv("datasets/Diabetes_v5/All_DM_sub_60_sample_182_classify_copy.csv", header=None, encoding='latin-1').values
+    elif dataset == "Dia175":  # sub_110_sample_175
+        df = pd.read_csv("datasets/Diabetes_v5/All_DM_sub_110_sample_175_classify_copy.csv", header=None, encoding='latin-1').values
+    else:
+        assert ""
+    # print(df.values.shape)    
+    X_fgm_df = df[:,1:-11]
+    y_df = df[:,0:1]
+    X_biomark_df = df[:,-11:]
+
+    # X_train, X_test, y_train, y_test = train_test_split(X_df, y_df, test_size=0.2, random_state=42, stratify=y_df, shuffle=True)
+    X_fgm_train, X_fgm_test, X_bio_train, X_bio_test, y_train, y_test = train_test_split(X_fgm_df, X_biomark_df, y_df, test_size=0.2, random_state=42, stratify=y_df, shuffle=True)
+    
+    train_labels = np.empty(y_train.shape,dtype=int)
+    test_labels = np.empty(y_test.shape,dtype=int)
+
+    # Move the labels to {0, ..., L-1}
+    labels_1 = np.unique(y_train)
+    transform_1 = {}
+    for i, l in enumerate(labels_1):
+        transform_1[l] = i
+
+    train_labels = np.vectorize(transform_1.get)(y_train)
+    test_labels = np.vectorize(transform_1.get)(y_test)
+
+    # 对biomarker数据进行标准化处理
+    if isBioNormalized == True:
+        mean = np.nanmean(X_bio_train)
+        std = np.nanstd(X_bio_train)
+        X_bio_train = (X_bio_train - mean) / std
+        X_bio_test = (X_bio_test - mean) / std
+
+    return X_fgm_train[..., np.newaxis], X_bio_train, train_labels, X_fgm_test[..., np.newaxis], X_bio_test, test_labels
+
+# 给生理数据加噪声
+def addNoise(df):
+    # 去除零元素之后求均值和方差
+    def non_zero_mean_std(np_arr):
+        exist = (np_arr != 0)
+        num = np_arr.sum(axis=0)
+        den = exist.sum(axis=0)
+        res = num/den
+        stds = []
+        for j in range(np_arr.shape[1]):
+            std = 0
+            for i in range(np_arr.shape[0]):
+                if np_arr[i,j] != 0:
+                    std = std + (np_arr[i,j] - res[j]) ** 2
+            std = (std/den[j]) ** 0.5
+            stds.append(std)
+        return res,stds
+
+    # 给原数组加上服从列向高斯分布的随机噪声
+    def addNoise_util(arr_old):
+        means, stds = non_zero_mean_std(arr_old)
+        for j in range(arr_old.shape[1]):
+            # x = np.random.normal(loc=means[j], scale=stds[j], size=(arr_old.shape[0]))
+            x = np.random.normal(loc=0, scale=1, size=(arr_old.shape[0]))
+            # print(x)
+            # print(arr_old[:,j])
+            arr_old[:,j] = arr_old[:,j] + x
+            
+        return arr_old
+    # tails = df[:,577:588]
+    tails = df
+    tails_new = addNoise_util(tails)
+    # df_new = np.hstack((df[:,0:577],tails_new))
+    # df_new = np.abs(tails_new)
+    df_new = tails_new
+    return df_new
+    
+def load_Diabete_classification_v5_with_val(dataset, isBioNormalized=True):
+    # 没有辅助任务，FGM使用ts2vec+sfa，Biomarkers使用VAE算法
+    # Dia182：train:test = 145:37
+    # Dia175：train:test = 140:35
+    if dataset == "Dia182": # sub_60_sample_182
+        df = pd.read_csv("datasets/Diabetes_v5/All_DM_sub_60_sample_182_classify_copy.csv", header=None, encoding='latin-1').values
+    elif dataset == "Dia175":  # sub_110_sample_175
+        df = pd.read_csv("datasets/Diabetes_v5/All_DM_sub_110_sample_175_classify_copy.csv", header=None, encoding='latin-1').values
+    else:
+        assert ""
+    # print(df.values.shape)    
+    X_fgm_df = df[:,1:-11]
+    y_df = df[:,0:1]
+    X_biomark_df = df[:,-11:]
+    # 生理数据是否需要加噪声
+    flag_addNoise = True
+    if flag_addNoise == True:
+        X_biomark_df = addNoise(X_biomark_df)
+        # np.random.shuffle(df_new)
+    else:
+        df_new = df.to_numpy()
+        # np.random.shuffle(df_new)
+
+    # X_train, X_test, y_train, y_test = train_test_split(X_df, y_df, test_size=0.2, random_state=42, stratify=y_df, shuffle=True)
+    X_fgm_train, X_fgm_test, X_bio_train, X_bio_test, y_train, y_test = train_test_split(X_fgm_df, X_biomark_df, y_df, test_size=0.2, random_state=42, stratify=y_df, shuffle=True)
+    X_fgm_train, X_fgm_val, X_bio_train, X_bio_val, y_train, y_val = train_test_split(X_fgm_train, X_bio_train, y_train, test_size=0.2, random_state=42, stratify=y_train, shuffle=True)
+    
+    train_labels = np.empty(y_train.shape,dtype=int)
+    val_labels = np.empty(y_test.shape,dtype=int)
+    test_labels = np.empty(y_test.shape,dtype=int)
+
+    # Move the labels to {0, ..., L-1}
+    labels_1 = np.unique(y_train)
+    transform_1 = {}
+    for i, l in enumerate(labels_1):
+        transform_1[l] = i
+
+    train_labels = np.vectorize(transform_1.get)(y_train)
+    val_labels = np.vectorize(transform_1.get)(y_val)
+    test_labels = np.vectorize(transform_1.get)(y_test)
+
+    # 对biomarker数据进行标准化处理
+    if isBioNormalized == True:
+        mean = np.nanmean(X_bio_train)
+        std = np.nanstd(X_bio_train)
+        X_bio_train = (X_bio_train - mean) / std
+        X_bio_val = (X_bio_val - mean) / std
+        X_bio_test = (X_bio_test - mean) / std
+
+    return X_fgm_train[..., np.newaxis], X_bio_train, train_labels, X_fgm_val[..., np.newaxis], X_bio_val, val_labels, X_fgm_test[..., np.newaxis], X_bio_test, test_labels
+    # return X_fgm_train[..., np.newaxis], X_bio_train[..., np.newaxis], train_labels, X_fgm_val[..., np.newaxis], X_bio_val[..., np.newaxis], val_labels, X_fgm_test[..., np.newaxis], X_bio_test[..., np.newaxis], test_labels
+
+def load_Diabete_classification_v5_with_val_origin(dataset, isBioNormalized=True, num_CV=0):
+    # 没有辅助任务，FGM使用ts2vec+sfa，Biomarkers使用VAE算法
+    # Dia182：train:test = 145:37
+    # Dia175：train:test = 140:35
+    if dataset == "Dia182": # sub_60_sample_182
+        train_filename = "datasets/Diabetes_v5/data-new-2_types/synthetic_detrended_6d_2types_f"+ str(num_CV) +"_train.csv"
+        test_filename = "datasets/Diabetes_v5/data-new-2_types/synthetic_detrended_6d_2types_f"+ str(num_CV) +"_test.csv"
+        df_train  = pd.read_csv(train_filename, header=None, encoding='latin-1').values
+        df_test  = pd.read_csv(test_filename, header=None, encoding='latin-1').values
+    elif dataset == "Dia175":  # sub_110_sample_175
+        df = pd.read_csv("datasets/Diabetes_v5/All_DM_sub_110_sample_175_classify_copy.csv", header=None, encoding='latin-1').values
+    else:
+        assert ""
+    
+    # 生理数据是否需要加噪声
+    flag_addNoise = True
+    if flag_addNoise == True:
+        df_train = addNoise(df_train)  
+        df_test = addNoise(df_test)  
+
+    y_train = df_train[:,0:1]
+    y_test = df_test[:,0:1]
+
+    
+    # print(df.values.shape)    
+    X_fgm_df = df[:,1:-11]
+    y_df = df[:,0:1]
+    X_biomark_df = df[:,-11:]
+
+    # X_train, X_test, y_train, y_test = train_test_split(X_df, y_df, test_size=0.2, random_state=42, stratify=y_df, shuffle=True)
+    X_fgm_train, X_fgm_test, X_bio_train, X_bio_test, y_train, y_test = train_test_split(X_fgm_df, X_biomark_df, y_df, test_size=0.2, random_state=42, stratify=y_df, shuffle=True)
+    X_fgm_train, X_fgm_val, X_bio_train, X_bio_val, y_train, y_val = train_test_split(X_fgm_train, X_bio_train, y_train, test_size=0.2, random_state=42, stratify=y_train, shuffle=True)
+    
+    train_labels = np.empty(y_train.shape,dtype=int)
+    val_labels = np.empty(y_test.shape,dtype=int)
+    test_labels = np.empty(y_test.shape,dtype=int)
+
+    # Move the labels to {0, ..., L-1}
+    labels_1 = np.unique(y_train)
+    transform_1 = {}
+    for i, l in enumerate(labels_1):
+        transform_1[l] = i
+
+    train_labels = np.vectorize(transform_1.get)(y_train)
+    val_labels = np.vectorize(transform_1.get)(y_val)
+    test_labels = np.vectorize(transform_1.get)(y_test)
+
+    # 对biomarker数据进行标准化处理
+    if isBioNormalized == True:
+        mean = np.nanmean(X_bio_train)
+        std = np.nanstd(X_bio_train)
+        X_bio_train = (X_bio_train - mean) / std
+        X_bio_val = (X_bio_val - mean) / std
+        X_bio_test = (X_bio_test - mean) / std
+
+    # return X_fgm_train[..., np.newaxis], X_bio_train, train_labels, X_fgm_val[..., np.newaxis], X_bio_val, val_labels, X_fgm_test[..., np.newaxis], X_bio_test, test_labels
+    return X_fgm_train[..., np.newaxis], X_bio_train[..., np.newaxis], train_labels, X_fgm_val[..., np.newaxis], X_bio_val[..., np.newaxis], val_labels, X_fgm_test[..., np.newaxis], X_bio_test[..., np.newaxis], test_labels
+
+def load_Diabete_classification_v6(dataset, isBioNormalized=True):
+    # 没有辅助任务，FGM使用ts2vec+sfa，Biomarkers使用VAE算法
+    # Dia182：train:test = 145:37
+    # Dia175：train:test = 140:35
+    if dataset == "Dia220": # sub_60_sample_182
+        df = pd.read_csv("datasets/Diabetes_v6/T1DM110_T2DM110_align_1+576.csv", header=None, encoding='latin-1').values
+    elif dataset == "Dia437":  # sub_110_sample_175
+        df = pd.read_csv("datasets/Diabetes_v6/T1DM327_T2DM110_align_1+576.csv", header=None, encoding='latin-1').values
+    else:
+        assert ""
+    # print(df.values.shape)    
+    X_fgm_df = df[:,14:]
+    y_df = df[:,0]
+    X_biomark_df = df[:,3:14]
+    # 生理数据是否需要加噪声
+    flag_addNoise = False
+    if flag_addNoise == True:
+        X_biomark_df = addNoise(X_biomark_df)
+        np.random.shuffle(X_biomark_df)
+
+    # X_train, X_test, y_train, y_test = train_test_split(X_df, y_df, test_size=0.2, random_state=42, stratify=y_df, shuffle=True)
+    X_fgm_train, X_fgm_test, X_bio_train, X_bio_test, y_train, y_test = train_test_split(X_fgm_df, X_biomark_df, y_df, test_size=0.2, random_state=42, stratify=y_df, shuffle=True)
+    X_fgm_train, X_fgm_val, X_bio_train, X_bio_val, y_train, y_val = train_test_split(X_fgm_train, X_bio_train, y_train, test_size=0.2, random_state=42, stratify=y_train, shuffle=True)
+    
+    train_labels = np.empty(y_train.shape,dtype=int)
+    val_labels = np.empty(y_test.shape,dtype=int)
+    test_labels = np.empty(y_test.shape,dtype=int)
+
+    # Move the labels to {0, ..., L-1}
+    labels_1 = np.unique(y_train)
+    transform_1 = {}
+    for i, l in enumerate(labels_1):
+        transform_1[l] = i
+
+    train_labels = np.vectorize(transform_1.get)(y_train)
+    val_labels = np.vectorize(transform_1.get)(y_val)
+    test_labels = np.vectorize(transform_1.get)(y_test)
+
+    # 对biomarker数据进行标准化处理
+    if isBioNormalized == True:
+        mean = np.nanmean(X_bio_train)
+        std = np.nanstd(X_bio_train)
+        X_bio_train = (X_bio_train - mean) / std
+        X_bio_val = (X_bio_val - mean) / std
+        X_bio_test = (X_bio_test - mean) / std
+
+        # min_value = np.min(X_bio_train,axis=0)
+        # max_value = np.max(X_bio_train,axis=0)
+
+        # X_bio_train = (X_bio_train - min_value) / (max_value - min_value)
+        # X_bio_val = (X_bio_val - min_value) / (max_value - min_value)
+        # X_bio_test = (X_bio_test - min_value) / (max_value - min_value)
+
+    return X_fgm_train[..., np.newaxis], X_bio_train, train_labels, X_fgm_val[..., np.newaxis], X_bio_val, val_labels, X_fgm_test[..., np.newaxis], X_bio_test, test_labels
+    # return X_fgm_train[..., np.newaxis], X_bio_train[..., np.newaxis], train_labels, X_fgm_val[..., np.newaxis], X_bio_val[..., np.newaxis], val_labels, X_fgm_test[..., np.newaxis], X_bio_test[..., np.newaxis], test_labels
+
+def load_Diabete_classification_v6_Neighbor(dataset, isBioNormalized=True):
+    # 没有辅助任务，FGM使用ts2vec+sfa，Biomarkers使用VAE算法
+    # Dia182：train:test = 145:37
+    # Dia175：train:test = 140:35
+    if dataset == "Dia220": # sub_60_sample_182
+        df = pd.read_csv("datasets/Diabetes_v6/T1DM110_T2DM110_align_1+576.csv", header=None, encoding='latin-1').values
+    elif dataset == "Dia437":  # sub_110_sample_175
+        df = pd.read_csv("datasets/Diabetes_v6/T1DM327_T2DM110_align_1+576_Neighbor.csv", header=None, encoding='latin-1').values
+    else:
+        assert ""
+    # print(df.values.shape)    
+    X_fgm_df = df[:,15:]
+    y_df = df[:,0]
+    neighbor = df[:,1]
+    X_biomark_df = df[:,4:15]
+    # 生理数据是否需要加噪声
+    flag_addNoise = False
+    if flag_addNoise == True:
+        X_biomark_df = addNoise(X_biomark_df)
+        np.random.shuffle(X_biomark_df)
+
+    # X_train, X_test, y_train, y_test = train_test_split(X_df, y_df, test_size=0.2, random_state=42, stratify=y_df, shuffle=True)
+    X_fgm_train, X_fgm_test, X_bio_train, X_bio_test, y_train, y_test, n_train, n_test = train_test_split(X_fgm_df, X_biomark_df, y_df, neighbor, test_size=0.2, random_state=42, stratify=y_df, shuffle=True)
+    X_fgm_train, X_fgm_val, X_bio_train, X_bio_val, y_train, y_val, n_train, n_val = train_test_split(X_fgm_train, X_bio_train, y_train, n_train, test_size=0.2, random_state=42, stratify=y_train, shuffle=True)
+    
+    train_labels = np.empty(y_train.shape,dtype=int)
+    val_labels = np.empty(y_test.shape,dtype=int)
+    test_labels = np.empty(y_test.shape,dtype=int)
+    train_neighbor = np.empty(n_train.shape,dtype=int)
+    val_neighbor = np.empty(n_test.shape,dtype=int)
+    test_neighbor = np.empty(n_test.shape,dtype=int)
+
+
+
+    # Move the labels to {0, ..., L-1}
+    labels_1 = np.unique(y_train)
+    transform_1 = {}
+    for i, l in enumerate(labels_1):
+        transform_1[l] = i
+
+    train_labels = np.vectorize(transform_1.get)(y_train)
+    val_labels = np.vectorize(transform_1.get)(y_val)
+    test_labels = np.vectorize(transform_1.get)(y_test)
+
+    # Move the labels to {0, ..., L-1}
+    labels_2 = np.unique(n_train)
+    transform_2 = {}
+    for i, l in enumerate(labels_2):
+        transform_2[l] = i
+
+    train_neighbor = np.vectorize(transform_2.get)(n_train)
+    val_neighbor = np.vectorize(transform_2.get)(n_val)
+    test_neighbor = np.vectorize(transform_2.get)(n_test)
+
+    # 对biomarker数据进行标准化处理
+    if isBioNormalized == True:
+        mean = np.nanmean(X_bio_train)
+        std = np.nanstd(X_bio_train)
+        X_bio_train = (X_bio_train - mean) / std
+        X_bio_val = (X_bio_val - mean) / std
+        X_bio_test = (X_bio_test - mean) / std
+
+        # min_value = np.min(X_bio_train,axis=0)
+        # max_value = np.max(X_bio_train,axis=0)
+
+        # X_bio_train = (X_bio_train - min_value) / (max_value - min_value)
+        # X_bio_val = (X_bio_val - min_value) / (max_value - min_value)
+        # X_bio_test = (X_bio_test - min_value) / (max_value - min_value)
+
+    return X_fgm_train[..., np.newaxis], X_bio_train, train_labels, train_neighbor, X_fgm_val[..., np.newaxis], X_bio_val, val_labels, val_neighbor, X_fgm_test[..., np.newaxis], X_bio_test, test_labels, test_neighbor
+    # return X_fgm_train[..., np.newaxis], X_bio_train[..., np.newaxis], train_labels, X_fgm_val[..., np.newaxis], X_bio_val[..., np.newaxis], val_labels, X_fgm_test[..., np.newaxis], X_bio_test[..., np.newaxis], test_labels
+
 
 def load_Diabete_prediction(dataset):
 
@@ -454,3 +803,10 @@ def gen_ano_train_data(all_train_data):
         pretrain_data.append(train_data)
     pretrain_data = np.expand_dims(np.stack(pretrain_data), 2)
     return pretrain_data
+
+
+if __name__ == "__main__":
+    dataset = "Dia437"
+    # x_train, y_train, x_test, y_test = load_Diabete_classification_v5(dataset)
+    load_Diabete_classification_v6(dataset)
+    pass
