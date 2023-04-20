@@ -162,7 +162,7 @@ class TS2Vec_SFA_Neighbor:
                 optimizer.zero_grad()
 
                 # 构建样本对的方式，TS2Vec：使用TS2Vec原文中的方法，SlowFeature：使用慢特征分析的方法
-                if sample_pair == "TS2Vec" or sample_pair == "TS2Vec_SFA_Neighbor":
+                if sample_pair == "TS2Vec":
                     ts_l = x.size(1)
                     crop_l = np.random.randint(low=2 ** (self.temporal_unit + 1), high=ts_l+1)
                     crop_left = np.random.randint(ts_l - crop_l + 1)
@@ -175,7 +175,7 @@ class TS2Vec_SFA_Neighbor:
                     out1 = out1[:, -crop_l:]
                     out2 = self._net(take_per_row(x, crop_offset + crop_left, crop_eright - crop_left))
                     out2 = out2[:, :crop_l]
-                elif sample_pair == "SlowFeature":
+                elif sample_pair == "SlowFeature" or sample_pair == "TS2Vec_SFA_Neighbor":
                     ts_l = x.size(1)
 
                     # 一个样本的前3/4和后3/4作为正样本对
@@ -196,7 +196,7 @@ class TS2Vec_SFA_Neighbor:
                     out1 = self._net(abc.to(self.device))
                     out2 = self._net(bcd.to(self.device))
                 
-                if sample_pair == "TS2Vec" or sample_pair == "SlowFeature":
+                if sample_pair == "SlowFeature" or sample_pair == "SlowFeature":
                     loss = hierarchical_contrastive_loss(
                         out1,
                         out2,

@@ -196,7 +196,7 @@ class TS2Vec_SFA_Neighbor:
                     out1 = self._net(abc.to(self.device))
                     out2 = self._net(bcd.to(self.device))
                 
-                if sample_pair == "TS2Vec" or sample_pair == "SlowFeature":
+                if sample_pair == "SlowFeature" or sample_pair == "SlowFeature":
                     loss = hierarchical_contrastive_loss(
                         out1,
                         out2,

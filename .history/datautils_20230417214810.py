@@ -340,7 +340,7 @@ def addNoise(df):
     def non_zero_mean_std(np_arr):
         exist = (np_arr != 0)
         num = np_arr.sum(axis=0)
-        den = exist.sum(axis=0) 
+        den = exist.sum(axis=0)
         res = num/den
         stds = []
         for j in range(np_arr.shape[1]):

@@ -206,7 +206,7 @@ if __name__ == '__main__':
     # TS2Vec_SFA_Neighbor:使用慢特征+邻域对比损失
     sample_pair="TS2Vec_SFA_Neighbor" # TS2Vec, SlowFeature,构建样本对的方式，TS2Vec：使用TS2Vec原文中的方法，SlowFeature：使用慢特征分析的方法
 
-    if sample_pair == "TS2Vec" or sample_pair == "SlowFeature":
+    if sample_pair == "SlowFeature" or sample_pair == "SlowFeature":
         model = TS2Vec_SFA(input_dims=train_data.shape[-1], device=device, **config)
         loss_log = model.fit(train_data, n_epochs=args.epochs, n_iters=args.iters, \
                              verbose=True, optimal=optimal, sample_pair=sample_pair)
